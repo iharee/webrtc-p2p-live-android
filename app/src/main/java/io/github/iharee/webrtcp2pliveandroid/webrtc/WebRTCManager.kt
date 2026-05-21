@@ -5,6 +5,7 @@ import org.webrtc.AudioSource
 import org.webrtc.AudioTrack
 import org.webrtc.DefaultVideoDecoderFactory
 import org.webrtc.DefaultVideoEncoderFactory
+import org.webrtc.EglBase
 import org.webrtc.PeerConnection
 import org.webrtc.PeerConnectionFactory
 import org.webrtc.RTCStatsCollectorCallback
@@ -17,37 +18,36 @@ import org.json.JSONObject
 
 class WebRTCManager(private val context: Context) {
 
-    private var peerConnectionFactoryInitialized = false
+    companion object {
+        @Volatile
+        private var initialized = false
 
-    fun initialize(): PeerConnectionFactory {
-        val adm = JavaAudioDeviceModule.builder(context)
+        fun initFactory(appContext: Context) {
+            if (initialized) return
+            synchronized(this) {
+                if (initialized) return
+                val options = PeerConnectionFactory.InitializationOptions.builder(appContext)
+                    .createInitializationOptions()
+                PeerConnectionFactory.initialize(options)
+                initialized = true
+                android.util.Log.i("WebRTCManager", "PeerConnectionFactory.initialize OK")
+            }
+        }
+    }
+
+    fun createFactory(eglContext: EglBase.Context? = null): PeerConnectionFactory {
+        val adm = JavaAudioDeviceModule.builder(context.applicationContext)
             .setUseHardwareAcousticEchoCanceler(true)
             .setUseHardwareNoiseSuppressor(true)
             .createAudioDeviceModule()
 
-        if (!peerConnectionFactoryInitialized) {
-            val initOptions = PeerConnectionFactory.InitializationOptions.builder(context)
-                .createInitializationOptions()
-            try {
-                PeerConnectionFactory.initialize(initOptions)
-            } catch (_: Exception) {
-                // Already initialized in this process — safe to ignore
-            }
-            peerConnectionFactoryInitialized = true
-        }
+        val encoderFactory = DefaultVideoEncoderFactory(eglContext, true, false)
+        val decoderFactory = DefaultVideoDecoderFactory(eglContext)
 
         return PeerConnectionFactory.builder()
             .setAudioDeviceModule(adm)
-            .setVideoEncoderFactory(
-                DefaultVideoEncoderFactory(
-                    null,
-                    true,
-                    false
-                )
-            )
-            .setVideoDecoderFactory(
-                DefaultVideoDecoderFactory(null)
-            )
+            .setVideoEncoderFactory(encoderFactory)
+            .setVideoDecoderFactory(decoderFactory)
             .createPeerConnectionFactory()
     }
 
@@ -65,7 +65,11 @@ class WebRTCManager(private val context: Context) {
         observer: PeerConnection.Observer
     ): PeerConnection? {
         val config = PeerConnection.RTCConfiguration(iceServers)
-        return factory.createPeerConnection(config, observer)
+        val pc = factory.createPeerConnection(config, observer)
+        if (pc == null) {
+            android.util.Log.e("WebRTCManager", "createPeerConnection returned null")
+        }
+        return pc
     }
 
     fun setQuality(
@@ -89,9 +93,7 @@ class WebRTCManager(private val context: Context) {
             }
 
             sender.parameters = params
-        } catch (_: Exception) {
-            // Setting parameters failed; silently ignore
-        }
+        } catch (_: Exception) { }
     }
 
     fun getStats(connection: PeerConnection, callback: (String) -> Unit) {

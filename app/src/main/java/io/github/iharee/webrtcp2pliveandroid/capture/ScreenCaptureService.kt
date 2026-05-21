@@ -130,8 +130,14 @@ class ScreenCaptureService : Service() {
     // ======= Public API (called from Activity via binder) =======
 
     fun startStreaming(config: StreamConfig, resultCode: Int, data: Intent) {
+        // PeerConnectionFactory.initialize() and factory creation must be on main thread.
+        // Create a shared EGL context on main thread for both factory and capturer.
+        WebRTCManager.initFactory(applicationContext)
+        webRTCManager = WebRTCManager(this)
+        val sharedEgl = EglBase.create()
+        val factory = webRTCManager!!.createFactory(sharedEgl.eglBaseContext)
         rtcHandler.post {
-            startStreamingInternal(config, resultCode, data)
+            startStreamingInternal(config, resultCode, data, factory, sharedEgl)
         }
     }
 
@@ -143,7 +149,7 @@ class ScreenCaptureService : Service() {
 
     // ======= Internal implementation =======
 
-    private fun startStreamingInternal(config: StreamConfig, resultCode: Int, data: Intent) {
+    private fun startStreamingInternal(config: StreamConfig, resultCode: Int, data: Intent, factory: PeerConnectionFactory, sharedEgl: EglBase) {
         currentConfig = config
         log("Starting stream to ${config.serverUrl} room=${config.roomId}")
         transitionTo(BroadcasterState.ConnectingSignal)
@@ -151,12 +157,11 @@ class ScreenCaptureService : Service() {
         // 1. Start foreground (must happen before getMediaProjection on Android 14+)
         startForeground(NOTIFICATION_ID, buildNotification())
 
-        // 2. Initialize EglBase
-        eglBase = EglBase.create()
+        // 2. Use shared EglBase (created on main thread for factory)
+        eglBase = sharedEgl
 
-        // 3. Initialize WebRTC and PeerConnectionFactory
-        webRTCManager = WebRTCManager(this)
-        peerConnectionFactory = webRTCManager!!.initialize()
+        // 3. PeerConnectionFactory was already created on the main thread
+        peerConnectionFactory = factory
 
         // 4. Create video source
         videoSource = peerConnectionFactory!!.createVideoSource(false)
@@ -307,27 +312,6 @@ class ScreenCaptureService : Service() {
             return
         }
 
-        val iceServers = buildList {
-            add(PeerConnection.IceServer.builder("stun:stun.l.google.com:19302").createIceServer())
-            val config = currentConfig
-            if (config != null && !config.turnServer.isNullOrBlank()) {
-                val turnUrl = if (config.turnServer.startsWith("turn:")) {
-                    config.turnServer
-                } else {
-                    "turn:${config.turnServer}:3478"
-                }
-                val builder = PeerConnection.IceServer.builder(turnUrl)
-                if (!config.turnUser.isNullOrBlank()) {
-                    builder.setUsername(config.turnUser)
-                }
-                if (!config.turnPass.isNullOrBlank()) {
-                    builder.setPassword(config.turnPass)
-                }
-                add(builder.createIceServer())
-                log("TURN server configured: $turnUrl")
-            }
-        }
-
         val observer = object : PeerConnection.Observer {
             override fun onIceCandidate(candidate: IceCandidate?) {
                 candidate?.let { ice ->
@@ -407,6 +391,20 @@ class ScreenCaptureService : Service() {
                 receiver: org.webrtc.RtpReceiver?,
                 streams: Array<out org.webrtc.MediaStream>?
             ) {}
+        }
+
+        val cfg = currentConfig
+        val iceServers = buildList {
+            add(PeerConnection.IceServer.builder("stun:stun.l.google.com:19302").createIceServer())
+            val turnHost = cfg?.turnServer?.removePrefix("turn:")?.removePrefix("turns:")?.split("?")?.first()?.trim()
+            if (!turnHost.isNullOrBlank()) {
+                val user = cfg.turnUser?.ifBlank { "test" } ?: "test"
+                val pass = cfg.turnPass?.ifBlank { "test" } ?: "test"
+                add(PeerConnection.IceServer.builder("turn:$turnHost:3478")
+                    .setUsername(user)
+                    .setPassword(pass)
+                    .createIceServer())
+            }
         }
 
         peerConnection = webRTCManager!!.createPeerConnection(factory, iceServers, observer)
