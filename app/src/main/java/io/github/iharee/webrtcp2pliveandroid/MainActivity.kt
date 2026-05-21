@@ -25,7 +25,9 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -176,6 +178,7 @@ class MainActivity : ComponentActivity() {
                     modifier = Modifier
                         .fillMaxSize()
                         .padding(16.dp)
+                        .verticalScroll(rememberScrollState())
                 ) {
                     if (service == null) {
                         // Service not yet bound
@@ -395,10 +398,11 @@ private fun ConfigZone(
                 OutlinedTextField(
                     value = turnUser,
                     onValueChange = onTurnUserChange,
-                    label = { Text("TURN Username") },
+                    label = { Text("TURN Username", fontSize = 13.sp) },
                     enabled = canConfigure,
                     singleLine = true,
-                    modifier = Modifier.weight(1f)
+                    modifier = Modifier.weight(1f),
+                    textStyle = MaterialTheme.typography.bodyMedium.copy(fontSize = 14.sp)
                 )
 
                 Spacer(modifier = Modifier.width(8.dp))
@@ -406,10 +410,11 @@ private fun ConfigZone(
                 OutlinedTextField(
                     value = turnPass,
                     onValueChange = onTurnPassChange,
-                    label = { Text("TURN Password") },
+                    label = { Text("TURN Password", fontSize = 13.sp) },
                     enabled = canConfigure,
                     singleLine = true,
-                    modifier = Modifier.weight(1f)
+                    modifier = Modifier.weight(1f),
+                    textStyle = MaterialTheme.typography.bodyMedium.copy(fontSize = 14.sp)
                 )
             }
 
@@ -516,7 +521,7 @@ private fun StatusZone(
         Card(
             modifier = Modifier
                 .fillMaxWidth()
-                .weight(1f)
+                .heightIn(min = 180.dp)
                 .clickable {
                     if (logLines.isNotEmpty()) {
                         val allLogs = logLines.joinToString("\n")
