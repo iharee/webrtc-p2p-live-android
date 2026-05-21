@@ -25,9 +25,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -178,7 +176,6 @@ class MainActivity : ComponentActivity() {
                     modifier = Modifier
                         .fillMaxSize()
                         .padding(16.dp)
-                        .verticalScroll(rememberScrollState())
                 ) {
                     if (service == null) {
                         // Service not yet bound
@@ -521,7 +518,7 @@ private fun StatusZone(
         Card(
             modifier = Modifier
                 .fillMaxWidth()
-                .heightIn(min = 180.dp)
+                .weight(1f)
                 .clickable {
                     if (logLines.isNotEmpty()) {
                         val allLogs = logLines.joinToString("\n")
