@@ -59,6 +59,7 @@ class MainActivity : ComponentActivity() {
 
                 val state: BroadcasterState by (service?.state
                     ?: MutableStateFlow(BroadcasterState.Idle)).collectAsState()
+                val s = state // local snapshot so Kotlin can smart-cast in when branches
 
                 val logLines: List<String> by (service?.logLines
                     ?: MutableStateFlow(emptyList())).collectAsState()
@@ -172,50 +173,234 @@ class MainActivity : ComponentActivity() {
 
                 // ---- UI ----
 
-                Column(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .padding(16.dp)
-                ) {
-                    if (service == null) {
-                        // Service not yet bound
-                        Column(
-                            modifier = Modifier.fillMaxSize(),
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                            verticalArrangement = Arrangement.Center
-                        ) {
+                val canConfigure = state is BroadcasterState.Idle || state is BroadcasterState.Failed || state is BroadcasterState.Closed
+                val isLive = state is BroadcasterState.Connected
+                val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+
+                if (service == null) {
+                    Box(
+                        modifier = Modifier.fillMaxSize(),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
                             CircularProgressIndicator()
                             Spacer(modifier = Modifier.height(16.dp))
                             Text("Connecting to service...")
                         }
-                    } else {
-                        ConfigZone(
-                            state = state,
-                            serverUrl = serverUrl,
-                            onServerUrlChange = { serverUrl = it },
-                            roomId = roomId,
-                            onRoomIdChange = { roomId = it },
-                            token = token,
-                            onTokenChange = { token = it },
-                            turnServer = turnServer,
-                            onTurnServerChange = { turnServer = it },
-                            turnUser = turnUser,
-                            onTurnUserChange = { turnUser = it },
-                            turnPass = turnPass,
-                            onTurnPassChange = { turnPass = it },
-                            showTurnConfig = showTurnConfig,
-                            onToggleTurnConfig = { showTurnConfig = !showTurnConfig },
-                            onStartStreaming = { startStreamingFlow() }
+                    }
+                } else {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(16.dp)
+                    ) {
+                        // ── Configuration ──
+                        Text("Configuration", style = MaterialTheme.typography.titleLarge)
+
+                        Spacer(modifier = Modifier.height(8.dp))
+
+                        OutlinedTextField(
+                            value = serverUrl,
+                            onValueChange = { serverUrl = it },
+                            label = { Text("Server URL") },
+                            enabled = canConfigure || isLive,
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth(),
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri)
                         )
+
+                        Spacer(modifier = Modifier.height(8.dp))
+
+                        OutlinedTextField(
+                            value = roomId,
+                            onValueChange = { roomId = it },
+                            label = { Text("Room ID") },
+                            enabled = canConfigure,
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+
+                        Spacer(modifier = Modifier.height(8.dp))
+
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.Bottom
+                        ) {
+                            OutlinedTextField(
+                                value = token,
+                                onValueChange = { token = it },
+                                label = { Text("Token") },
+                                enabled = canConfigure,
+                                singleLine = true,
+                                modifier = Modifier.weight(1f)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Button(onClick = {
+                                clipboard.setPrimaryClip(ClipData.newPlainText("Token", token))
+                            }) {
+                                Text("Copy")
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(8.dp))
+
+                        TextButton(onClick = { showTurnConfig = !showTurnConfig }) {
+                            Text(if (showTurnConfig) "▼ TURN Config" else "▶ TURN Config")
+                            Spacer(modifier = Modifier.width(4.dp))
+                            if (!turnServer.isBlank()) {
+                                Text(
+                                    text = "(configured)",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = Color(0xFF00AA00)
+                                )
+                            }
+                        }
+
+                        if (showTurnConfig) {
+                            OutlinedTextField(
+                                value = turnServer,
+                                onValueChange = { turnServer = it },
+                                label = { Text("TURN Server (e.g. 203.0.113.1)") },
+                                enabled = canConfigure,
+                                singleLine = true,
+                                modifier = Modifier.fillMaxWidth(),
+                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri)
+                            )
+
+                            Spacer(modifier = Modifier.height(8.dp))
+
+                            Row(modifier = Modifier.fillMaxWidth()) {
+                                OutlinedTextField(
+                                    value = turnUser,
+                                    onValueChange = { turnUser = it },
+                                    label = { Text("TURN Username", fontSize = 13.sp) },
+                                    enabled = canConfigure,
+                                    singleLine = true,
+                                    modifier = Modifier.weight(1f),
+                                    textStyle = MaterialTheme.typography.bodyMedium.copy(fontSize = 14.sp)
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                OutlinedTextField(
+                                    value = turnPass,
+                                    onValueChange = { turnPass = it },
+                                    label = { Text("TURN Password", fontSize = 13.sp) },
+                                    enabled = canConfigure,
+                                    singleLine = true,
+                                    modifier = Modifier.weight(1f),
+                                    textStyle = MaterialTheme.typography.bodyMedium.copy(fontSize = 14.sp)
+                                )
+                            }
+
+                            Spacer(modifier = Modifier.height(8.dp))
+                        }
+
+                        if (isLive) {
+                            Surface(
+                                color = MaterialTheme.colorScheme.primaryContainer,
+                                shape = MaterialTheme.shapes.small
+                            ) {
+                                Text(
+                                    text = "LIVE",
+                                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                                    color = Color(0xFF00AA00),
+                                    style = MaterialTheme.typography.titleMedium
+                                )
+                            }
+
+                            Spacer(modifier = Modifier.height(8.dp))
+                        }
+
+                        Button(
+                            onClick = { startStreamingFlow() },
+                            enabled = canConfigure && serverUrl.isNotBlank() && roomId.isNotBlank(),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text("Start Streaming")
+                        }
 
                         Spacer(modifier = Modifier.height(16.dp))
 
-                        StatusZone(
-                            state = state,
-                            logLines = logLines,
-                            listState = listState,
-                            onStopStreaming = { service?.stopStreaming() }
+                        // ── Status header ──
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text("Status", style = MaterialTheme.typography.titleLarge)
+                            Row {
+                                if (logLines.isNotEmpty()) {
+                                    TextButton(onClick = {
+                                        clipboard.setPrimaryClip(
+                                            ClipData.newPlainText("Logs", logLines.joinToString("\n"))
+                                        )
+                                        Toast.makeText(context, "Copied", Toast.LENGTH_SHORT).show()
+                                    }) { Text("Copy log") }
+                                }
+                                if (isLive) {
+                                    Button(
+                                        onClick = { service?.stopStreaming() },
+                                        colors = ButtonDefaults.buttonColors(
+                                            containerColor = MaterialTheme.colorScheme.error
+                                        )
+                                    ) { Text("Stop") }
+                                }
+                                if (state is BroadcasterState.Failed) {
+                                    Button(onClick = { service?.stopStreaming() }) { Text("Retry") }
+                                }
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(4.dp))
+
+                        val statusText = when (s) {
+                            is BroadcasterState.Idle -> "Idle — ready to start."
+                            is BroadcasterState.Configuring -> "Configuring ${s.serverUrl}/${s.roomId}..."
+                            is BroadcasterState.ConnectingSignal -> "Connecting to signaling server..."
+                            is BroadcasterState.WaitingViewer -> "Waiting for a viewer to join..."
+                            is BroadcasterState.Negotiating -> "Negotiating: ${s.step}"
+                            is BroadcasterState.Connected -> "Streaming LIVE (${s.quality}, max bitrate: ${s.maxBitrate})"
+                            is BroadcasterState.Failed -> "Error: ${s.reason}"
+                            is BroadcasterState.Closed -> "Stream stopped."
+                        }
+                        val statusColor = when (s) {
+                            is BroadcasterState.Failed -> MaterialTheme.colorScheme.error
+                            is BroadcasterState.Connected -> Color(0xFF00AA00)
+                            else -> Color.Unspecified
+                        }
+                        Text(
+                            text = statusText,
+                            color = statusColor,
+                            style = MaterialTheme.typography.bodyMedium
                         )
+
+                        Spacer(modifier = Modifier.height(8.dp))
+
+                        // ── Log LazyColumn (fills remaining space, true lazy loading) ──
+                        LazyColumn(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .weight(1f),
+                            state = listState
+                        ) {
+                            if (logLines.isEmpty()) {
+                                item {
+                                    Text(
+                                        text = "No log entries yet.",
+                                        fontFamily = FontFamily.Monospace,
+                                        fontSize = 12.sp,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                            }
+                            items(logLines) { line ->
+                                Text(
+                                    text = line,
+                                    fontFamily = FontFamily.Monospace,
+                                    fontSize = 12.sp,
+                                    modifier = Modifier.padding(vertical = 1.dp)
+                                )
+                            }
+                        }
                     }
                 }
             }
@@ -281,282 +466,5 @@ class MainActivity : ComponentActivity() {
     private fun generateRandomToken(): String {
         val chars = "abcdefghijklmnopqrstuvwxyz0123456789"
         return (1..12).map { chars.random() }.joinToString("")
-    }
-}
-
-// --- UI Composables ---
-
-@Composable
-private fun ConfigZone(
-    state: BroadcasterState,
-    serverUrl: String,
-    onServerUrlChange: (String) -> Unit,
-    roomId: String,
-    onRoomIdChange: (String) -> Unit,
-    token: String,
-    onTokenChange: (String) -> Unit,
-    turnServer: String,
-    onTurnServerChange: (String) -> Unit,
-    turnUser: String,
-    onTurnUserChange: (String) -> Unit,
-    turnPass: String,
-    onTurnPassChange: (String) -> Unit,
-    showTurnConfig: Boolean,
-    onToggleTurnConfig: () -> Unit,
-    onStartStreaming: () -> Unit
-) {
-    val canConfigure = state is BroadcasterState.Idle || state is BroadcasterState.Failed || state is BroadcasterState.Closed
-    val isLive = state is BroadcasterState.Connected
-
-    Column {
-        Text(
-            text = "Configuration",
-            style = MaterialTheme.typography.titleLarge
-        )
-
-        Spacer(modifier = Modifier.height(8.dp))
-
-        OutlinedTextField(
-            value = serverUrl,
-            onValueChange = onServerUrlChange,
-            label = { Text("Server URL") },
-            enabled = canConfigure || isLive,
-            singleLine = true,
-            modifier = Modifier.fillMaxWidth(),
-            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri)
-        )
-
-        Spacer(modifier = Modifier.height(8.dp))
-
-        OutlinedTextField(
-            value = roomId,
-            onValueChange = onRoomIdChange,
-            label = { Text("Room ID") },
-            enabled = canConfigure,
-            singleLine = true,
-            modifier = Modifier.fillMaxWidth()
-        )
-
-        Spacer(modifier = Modifier.height(8.dp))
-
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.Bottom
-        ) {
-            OutlinedTextField(
-                value = token,
-                onValueChange = onTokenChange,
-                label = { Text("Token") },
-                enabled = canConfigure,
-                singleLine = true,
-                modifier = Modifier.weight(1f)
-            )
-
-            Spacer(modifier = Modifier.width(8.dp))
-
-            val context = LocalContext.current
-            Button(onClick = {
-                val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                clipboard.setPrimaryClip(ClipData.newPlainText("Token", token))
-            }) {
-                Text("Copy")
-            }
-        }
-
-        Spacer(modifier = Modifier.height(8.dp))
-
-        // TURN config — expandable section
-        TextButton(onClick = onToggleTurnConfig) {
-            Text(if (showTurnConfig) "▼ TURN Config" else "▶ TURN Config")
-            Spacer(modifier = Modifier.width(4.dp))
-            if (!turnServer.isBlank()) {
-                Text(
-                    text = "(configured)",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = Color(0xFF00AA00)
-                )
-            }
-        }
-
-        if (showTurnConfig) {
-            OutlinedTextField(
-                value = turnServer,
-                onValueChange = onTurnServerChange,
-                label = { Text("TURN Server (e.g. 203.0.113.1)") },
-                enabled = canConfigure,
-                singleLine = true,
-                modifier = Modifier.fillMaxWidth(),
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri)
-            )
-
-            Spacer(modifier = Modifier.height(8.dp))
-
-            Row(modifier = Modifier.fillMaxWidth()) {
-                OutlinedTextField(
-                    value = turnUser,
-                    onValueChange = onTurnUserChange,
-                    label = { Text("TURN Username", fontSize = 13.sp) },
-                    enabled = canConfigure,
-                    singleLine = true,
-                    modifier = Modifier.weight(1f),
-                    textStyle = MaterialTheme.typography.bodyMedium.copy(fontSize = 14.sp)
-                )
-
-                Spacer(modifier = Modifier.width(8.dp))
-
-                OutlinedTextField(
-                    value = turnPass,
-                    onValueChange = onTurnPassChange,
-                    label = { Text("TURN Password", fontSize = 13.sp) },
-                    enabled = canConfigure,
-                    singleLine = true,
-                    modifier = Modifier.weight(1f),
-                    textStyle = MaterialTheme.typography.bodyMedium.copy(fontSize = 14.sp)
-                )
-            }
-
-            Spacer(modifier = Modifier.height(8.dp))
-        }
-
-        if (isLive) {
-            Surface(
-                color = MaterialTheme.colorScheme.primaryContainer,
-                shape = MaterialTheme.shapes.small
-            ) {
-                Text(
-                    text = "LIVE",
-                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
-                    color = Color(0xFF00AA00),
-                    style = MaterialTheme.typography.titleMedium
-                )
-            }
-        }
-
-        Spacer(modifier = Modifier.height(8.dp))
-
-        Button(
-            onClick = onStartStreaming,
-            enabled = canConfigure && serverUrl.isNotBlank() && roomId.isNotBlank(),
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            Text("Start Streaming")
-        }
-    }
-}
-
-@Composable
-private fun StatusZone(
-    state: BroadcasterState,
-    logLines: List<String>,
-    listState: androidx.compose.foundation.lazy.LazyListState,
-    onStopStreaming: () -> Unit
-) {
-    val context = LocalContext.current
-    val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-
-    Column(modifier = Modifier.fillMaxWidth()) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Text(
-                text = "Status",
-                style = MaterialTheme.typography.titleLarge
-            )
-
-            if (state is BroadcasterState.Connected) {
-                Button(
-                    onClick = onStopStreaming,
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = MaterialTheme.colorScheme.error
-                    )
-                ) {
-                    Text("Stop Streaming")
-                }
-            }
-
-            if (state is BroadcasterState.Failed) {
-                Button(onClick = onStopStreaming) {
-                    Text("Retry")
-                }
-            }
-        }
-
-        Spacer(modifier = Modifier.height(8.dp))
-
-        val statusText = when (state) {
-            is BroadcasterState.Idle -> "Idle — ready to start."
-            is BroadcasterState.Configuring -> "Configuring ${state.serverUrl}/${state.roomId}..."
-            is BroadcasterState.ConnectingSignal -> "Connecting to signaling server..."
-            is BroadcasterState.WaitingViewer -> "Waiting for a viewer to join..."
-            is BroadcasterState.Negotiating -> "Negotiating: ${state.step}"
-            is BroadcasterState.Connected -> "Streaming LIVE (${state.quality}, max bitrate: ${state.maxBitrate})"
-            is BroadcasterState.Failed -> "Error: ${state.reason}"
-            is BroadcasterState.Closed -> "Stream stopped."
-        }
-
-        when (state) {
-            is BroadcasterState.Failed -> Text(
-                text = statusText,
-                color = MaterialTheme.colorScheme.error,
-                style = MaterialTheme.typography.bodyMedium
-            )
-            is BroadcasterState.Connected -> Text(
-                text = statusText,
-                color = Color(0xFF00AA00),
-                style = MaterialTheme.typography.bodyMedium
-            )
-            else -> Text(
-                text = statusText,
-                style = MaterialTheme.typography.bodyMedium
-            )
-        }
-
-        Spacer(modifier = Modifier.height(8.dp))
-
-        Card(
-            modifier = Modifier
-                .fillMaxWidth()
-                .weight(1f)
-                .clickable {
-                    if (logLines.isNotEmpty()) {
-                        val allLogs = logLines.joinToString("\n")
-                        clipboard.setPrimaryClip(
-                            ClipData.newPlainText("Logs", allLogs)
-                        )
-                        Toast.makeText(context, "Copied", Toast.LENGTH_SHORT).show()
-                    }
-                },
-            colors = CardDefaults.cardColors(
-                containerColor = MaterialTheme.colorScheme.surfaceVariant
-            )
-        ) {
-            LazyColumn(
-                state = listState,
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(8.dp),
-            ) {
-                if (logLines.isEmpty()) {
-                    item {
-                        Text(
-                            text = "No log entries yet.",
-                            fontFamily = FontFamily.Monospace,
-                            fontSize = 12.sp,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                }
-                items(logLines) { line ->
-                    Text(
-                        text = line,
-                        fontFamily = FontFamily.Monospace,
-                        fontSize = 12.sp,
-                        modifier = Modifier.padding(vertical = 1.dp)
-                    )
-                }
-            }
-        }
     }
 }
