@@ -9,9 +9,9 @@ import okhttp3.WebSocketListener
 
 class SignalingClient(
     private val serverUrl: String,
-    private val onEvent: (SignalingMessage) -> Unit
+    private val onEvent: (SignalingMessage) -> Unit,
+    private val okHttpClient: OkHttpClient = OkHttpClient()
 ) {
-    private val okHttpClient = OkHttpClient()
     private val gson = Gson()
     private var webSocket: WebSocket? = null
 

@@ -1,5 +1,6 @@
 package io.github.iharee.webrtcp2pliveandroid.capture
 
+import io.github.iharee.webrtcp2pliveandroid.R
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
@@ -32,9 +33,18 @@ import org.webrtc.SessionDescription
 import org.webrtc.SurfaceTextureHelper
 import org.webrtc.VideoSource
 import org.webrtc.VideoTrack
+import okhttp3.OkHttpClient
+import java.security.KeyStore
+import java.security.SecureRandom
+import java.security.cert.CertificateFactory
+import java.security.cert.X509Certificate
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import javax.net.ssl.SSLContext
+import javax.net.ssl.TrustManager
+import javax.net.ssl.TrustManagerFactory
+import javax.net.ssl.X509TrustManager
 
 class ScreenCaptureService : Service() {
 
@@ -176,7 +186,7 @@ class ScreenCaptureService : Service() {
         log("Screen capture started ${captureWidth}x${captureHeight} @30fps, baseline bitrate=$baselineBitrate")
 
         // 6. Connect signaling
-        signalingClient = SignalingClient(config.serverUrl) { msg -> onSignalingEvent(msg) }
+        signalingClient = SignalingClient(config.serverUrl, { msg -> onSignalingEvent(msg) }, createOkHttpClient())
         signalingClient!!.connect()
         log("Signaling client connecting...")
     }
@@ -400,6 +410,11 @@ class ScreenCaptureService : Service() {
         }
 
         peerConnection = webRTCManager!!.createPeerConnection(factory, iceServers, observer)
+        if (peerConnection == null) {
+            log("ERROR: Failed to create PeerConnection")
+            transitionTo(BroadcasterState.Failed("PeerConnection creation failed"))
+            return
+        }
         log("PeerConnection created")
 
         // Create audio source / track and add to peer connection
@@ -594,6 +609,49 @@ class ScreenCaptureService : Service() {
                 .setOngoing(true)
                 .build()
         }
+    }
+
+    // ======= OkHttp with custom CA trust =======
+
+    private fun createOkHttpClient(): OkHttpClient {
+        val cf = CertificateFactory.getInstance("X.509")
+        val caCert = resources.openRawResource(R.raw.webrtc_ca).use { cf.generateCertificate(it) }
+
+        val customKeyStore = KeyStore.getInstance(KeyStore.getDefaultType()).apply {
+            load(null, null)
+            setCertificateEntry("webrtc-ca", caCert)
+        }
+
+        val customTmf = TrustManagerFactory.getInstance(TrustManagerFactory.getDefaultAlgorithm()).apply {
+            init(customKeyStore)
+        }
+        val systemTmf = TrustManagerFactory.getInstance(TrustManagerFactory.getDefaultAlgorithm()).apply {
+            init(null as KeyStore?)
+        }
+
+        val customTM = customTmf.trustManagers.first { it is X509TrustManager } as X509TrustManager
+        val systemTM = systemTmf.trustManagers.first { it is X509TrustManager } as X509TrustManager
+
+        val sslContext = SSLContext.getInstance("TLS").apply {
+            init(null, arrayOf(CompositeTrustManager(customTM, systemTM)), SecureRandom())
+        }
+
+        return OkHttpClient.Builder()
+            .sslSocketFactory(sslContext.socketFactory, customTM)
+            .build()
+    }
+
+    private class CompositeTrustManager(
+        private val custom: X509TrustManager,
+        private val system: X509TrustManager
+    ) : X509TrustManager {
+        override fun checkClientTrusted(chain: Array<out X509Certificate>?, authType: String?) {
+            try { custom.checkClientTrusted(chain, authType) } catch (_: Exception) { system.checkClientTrusted(chain, authType) }
+        }
+        override fun checkServerTrusted(chain: Array<out X509Certificate>?, authType: String?) {
+            try { custom.checkServerTrusted(chain, authType) } catch (_: Exception) { system.checkServerTrusted(chain, authType) }
+        }
+        override fun getAcceptedIssuers(): Array<X509Certificate> = custom.acceptedIssuers
     }
 
     // ======= SdpObserver adapter for concise setRemote/setLocal calls =======

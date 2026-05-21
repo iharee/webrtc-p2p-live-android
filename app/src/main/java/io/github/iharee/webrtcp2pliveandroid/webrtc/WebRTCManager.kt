@@ -17,15 +17,24 @@ import org.json.JSONObject
 
 class WebRTCManager(private val context: Context) {
 
+    private var peerConnectionFactoryInitialized = false
+
     fun initialize(): PeerConnectionFactory {
         val adm = JavaAudioDeviceModule.builder(context)
             .setUseHardwareAcousticEchoCanceler(true)
             .setUseHardwareNoiseSuppressor(true)
             .createAudioDeviceModule()
 
-        val initOptions = PeerConnectionFactory.InitializationOptions.builder(context)
-            .createInitializationOptions()
-        PeerConnectionFactory.initialize(initOptions)
+        if (!peerConnectionFactoryInitialized) {
+            val initOptions = PeerConnectionFactory.InitializationOptions.builder(context)
+                .createInitializationOptions()
+            try {
+                PeerConnectionFactory.initialize(initOptions)
+            } catch (_: Exception) {
+                // Already initialized in this process — safe to ignore
+            }
+            peerConnectionFactoryInitialized = true
+        }
 
         return PeerConnectionFactory.builder()
             .setAudioDeviceModule(adm)
@@ -33,7 +42,7 @@ class WebRTCManager(private val context: Context) {
                 DefaultVideoEncoderFactory(
                     null,
                     true,
-                    true
+                    false
                 )
             )
             .setVideoDecoderFactory(
@@ -54,11 +63,9 @@ class WebRTCManager(private val context: Context) {
         factory: PeerConnectionFactory,
         iceServers: List<PeerConnection.IceServer>,
         observer: PeerConnection.Observer
-    ): PeerConnection {
+    ): PeerConnection? {
         val config = PeerConnection.RTCConfiguration(iceServers)
-        val pc = factory.createPeerConnection(config, observer)
-            ?: throw IllegalStateException("Failed to create PeerConnection")
-        return pc
+        return factory.createPeerConnection(config, observer)
     }
 
     fun setQuality(
