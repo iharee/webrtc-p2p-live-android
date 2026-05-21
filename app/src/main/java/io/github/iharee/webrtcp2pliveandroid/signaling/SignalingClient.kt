@@ -16,9 +16,21 @@ class SignalingClient(
     private var webSocket: WebSocket? = null
 
     fun connect() {
-        val request = Request.Builder()
-            .url(serverUrl)
-            .build()
+        // Normalize ws:// → http:// and wss:// → https:// —
+        // OkHttp handles HTTP→WS upgrade automatically.
+        val normalizedUrl = serverUrl
+            .replaceFirst("ws://", "http://")
+            .replaceFirst("wss://", "https://")
+
+        val request = try {
+            Request.Builder().url(normalizedUrl).build()
+        } catch (e: IllegalArgumentException) {
+            onEvent(SignalingMessage(
+                type = "error",
+                error = "Invalid URL: ${e.message}"
+            ))
+            return
+        }
 
         webSocket = okHttpClient.newWebSocket(request, object : WebSocketListener() {
             override fun onOpen(webSocket: WebSocket, response: Response) {
@@ -39,11 +51,23 @@ class SignalingClient(
             }
 
             override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
-                onEvent(SignalingMessage(type = "close"))
+                onEvent(SignalingMessage(type = "close", error = "code=$code reason=$reason"))
             }
 
             override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
-                onEvent(SignalingMessage(type = "error"))
+                val detail = buildString {
+                    append(t.javaClass.simpleName)
+                    append(": ")
+                    append(t.message ?: "unknown")
+                    if (response != null) {
+                        append(" (httpCode=")
+                        append(response.code)
+                        append(", ")
+                        append(response.message)
+                        append(")")
+                    }
+                }
+                onEvent(SignalingMessage(type = "error", error = detail))
             }
         })
     }

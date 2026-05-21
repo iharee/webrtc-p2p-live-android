@@ -7,7 +7,8 @@ data class SignalingMessage(
     val token: String? = null,
     val reason: String? = null,
     val quality: String? = null,
-    val maxBitrate: Long? = null
+    val maxBitrate: Long? = null,
+    val error: String? = null
 )
 
 data class IceCandidatePayload(

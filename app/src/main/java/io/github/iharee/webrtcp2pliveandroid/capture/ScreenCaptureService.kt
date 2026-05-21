@@ -278,7 +278,8 @@ class ScreenCaptureService : Service() {
             }
 
             "close", "error" -> {
-                log("Signaling ${msg.type}, resetting")
+                val detail = msg.error ?: ""
+                log("Signaling ${msg.type}: $detail")
                 stopStreaming()
             }
 
