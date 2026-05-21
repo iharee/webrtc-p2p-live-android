@@ -82,6 +82,9 @@ class ScreenCaptureService : Service() {
     private var captureWidth: Int = 0
     private var captureHeight: Int = 0
     private var baselineBitrate: Long = 0
+    private var mediaProjectionResultCode: Int = 0
+    private var mediaProjectionData: Intent? = null
+    @Volatile private var isRotating = false
 
     // ======= Binder =======
     private val binder = LocalBinder()
@@ -147,10 +150,16 @@ class ScreenCaptureService : Service() {
         }
     }
 
+    fun onRotation() {
+        rtcHandler.post { rotateCapturer() }
+    }
+
     // ======= Internal implementation =======
 
     private fun startStreamingInternal(config: StreamConfig, resultCode: Int, data: Intent, factory: PeerConnectionFactory, sharedEgl: EglBase) {
         currentConfig = config
+        mediaProjectionResultCode = resultCode
+        mediaProjectionData = data
         log("Starting stream to ${config.serverUrl} room=${config.roomId}")
         transitionTo(BroadcasterState.ConnectingSignal)
 
@@ -179,7 +188,11 @@ class ScreenCaptureService : Service() {
 
         screenCapturer = ScreenCapturerAndroid(data, object : MediaProjection.Callback() {
             override fun onStop() {
-                rtcHandler.post { stopStreaming() }
+                val wasRotating = isRotating
+                rtcHandler.post {
+                    if (!wasRotating) stopStreaming()
+                    else log("MediaProjection onStop ignored (rotation in progress)")
+                }
             }
         })
         screenCapturer!!.initialize(
@@ -208,6 +221,60 @@ class ScreenCaptureService : Service() {
             stopForeground(true)
         }
         stopSelf()
+    }
+
+    private fun rotateCapturer() {
+        val data = mediaProjectionData ?: run {
+            log("ERROR: No media projection data stored, cannot rotate")
+            return
+        }
+        if (videoSource == null || eglBase == null || peerConnectionFactory == null) {
+            log("ERROR: Core components null, cannot rotate")
+            return
+        }
+
+        isRotating = true
+        log("Screen rotation detected, swapping capturer...")
+
+        screenCapturer?.stopCapture()
+        screenCapturer?.dispose()
+        screenCapturer = null
+
+        surfaceTextureHelper?.dispose()
+        surfaceTextureHelper = null
+
+        val dm = resources.displayMetrics
+        captureWidth = dm.widthPixels
+        captureHeight = dm.heightPixels
+        baselineBitrate = computeBaselineBitrate(captureWidth, captureHeight)
+
+        surfaceTextureHelper = SurfaceTextureHelper.create(
+            "capture",
+            eglBase!!.eglBaseContext
+        )
+
+        screenCapturer = ScreenCapturerAndroid(data, object : MediaProjection.Callback() {
+            override fun onStop() {
+                val wasRotating = isRotating
+                rtcHandler.post {
+                    if (!wasRotating) stopStreaming()
+                    else log("MediaProjection onStop ignored (rotation in progress)")
+                }
+            }
+        })
+        screenCapturer!!.initialize(
+            surfaceTextureHelper,
+            this,
+            videoSource!!.capturerObserver
+        )
+        screenCapturer!!.startCapture(captureWidth, captureHeight, 30)
+
+        isRotating = false
+        log("Capturer swapped: ${captureWidth}x${captureHeight} @30fps, baseline bitrate=$baselineBitrate")
+
+        videoSender?.let { sender ->
+            webRTCManager?.setQuality(sender, "auto", baselineBitrate, null)
+        }
     }
 
     // ======= Signaling event bridge =======

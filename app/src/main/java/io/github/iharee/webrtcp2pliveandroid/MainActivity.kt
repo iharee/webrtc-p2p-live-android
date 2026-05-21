@@ -10,6 +10,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.ServiceConnection
 import android.content.pm.PackageManager
+import android.content.res.Configuration
 import android.media.projection.MediaProjectionManager
 import android.os.Build
 import android.os.Bundle
@@ -224,6 +225,16 @@ class MainActivity : ComponentActivity() {
     override fun onDestroy() {
         unbindFromService()
         super.onDestroy()
+    }
+
+    override fun onConfigurationChanged(newConfig: Configuration) {
+        super.onConfigurationChanged(newConfig)
+        val orientation = newConfig.orientation
+        if (orientation == Configuration.ORIENTATION_PORTRAIT ||
+            orientation == Configuration.ORIENTATION_LANDSCAPE
+        ) {
+            serviceFlow.value?.onRotation()
+        }
     }
 
     // --- Service binding ---
