@@ -18,6 +18,9 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import android.widget.Toast
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -69,6 +72,10 @@ class MainActivity : ComponentActivity() {
                 var serverUrl by remember { mutableStateOf("ws://172.16.40.148:8080") }
                 var roomId by remember { mutableStateOf("testroom") }
                 var token by remember { mutableStateOf(generateRandomToken()) }
+                var turnServer by remember { mutableStateOf("") }
+                var turnUser by remember { mutableStateOf("") }
+                var turnPass by remember { mutableStateOf("") }
+                var showTurnConfig by remember { mutableStateOf(false) }
                 val listState = rememberLazyListState()
 
                 // Pending config held across permission/MediaProjection flow
@@ -129,7 +136,10 @@ class MainActivity : ComponentActivity() {
                     val config = ScreenCaptureService.StreamConfig(
                         serverUrl = serverUrl,
                         roomId = roomId,
-                        token = token.ifBlank { null }
+                        token = token.ifBlank { null },
+                        turnServer = turnServer.ifBlank { null },
+                        turnUser = turnUser.ifBlank { null },
+                        turnPass = turnPass.ifBlank { null }
                     )
                     pendingConfig = config
 
@@ -187,6 +197,14 @@ class MainActivity : ComponentActivity() {
                             onRoomIdChange = { roomId = it },
                             token = token,
                             onTokenChange = { token = it },
+                            turnServer = turnServer,
+                            onTurnServerChange = { turnServer = it },
+                            turnUser = turnUser,
+                            onTurnUserChange = { turnUser = it },
+                            turnPass = turnPass,
+                            onTurnPassChange = { turnPass = it },
+                            showTurnConfig = showTurnConfig,
+                            onToggleTurnConfig = { showTurnConfig = !showTurnConfig },
                             onStartStreaming = { startStreamingFlow() }
                         )
 
@@ -267,6 +285,14 @@ private fun ConfigZone(
     onRoomIdChange: (String) -> Unit,
     token: String,
     onTokenChange: (String) -> Unit,
+    turnServer: String,
+    onTurnServerChange: (String) -> Unit,
+    turnUser: String,
+    onTurnUserChange: (String) -> Unit,
+    turnPass: String,
+    onTurnPassChange: (String) -> Unit,
+    showTurnConfig: Boolean,
+    onToggleTurnConfig: () -> Unit,
     onStartStreaming: () -> Unit
 ) {
     val canConfigure = state is BroadcasterState.Idle || state is BroadcasterState.Failed
@@ -323,11 +349,62 @@ private fun ConfigZone(
                 val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
                 clipboard.setPrimaryClip(ClipData.newPlainText("Token", token))
             }) {
-                Text("Copy Token")
+                Text("Copy")
             }
         }
 
-        Spacer(modifier = Modifier.height(12.dp))
+        Spacer(modifier = Modifier.height(8.dp))
+
+        // TURN config — expandable section
+        TextButton(onClick = onToggleTurnConfig) {
+            Text(if (showTurnConfig) "▼ TURN Config" else "▶ TURN Config")
+            Spacer(modifier = Modifier.width(4.dp))
+            if (!turnServer.isBlank()) {
+                Text(
+                    text = "(configured)",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = Color(0xFF00AA00)
+                )
+            }
+        }
+
+        if (showTurnConfig) {
+            OutlinedTextField(
+                value = turnServer,
+                onValueChange = onTurnServerChange,
+                label = { Text("TURN Server (e.g. 203.0.113.1)") },
+                enabled = canConfigure,
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth(),
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri)
+            )
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            Row(modifier = Modifier.fillMaxWidth()) {
+                OutlinedTextField(
+                    value = turnUser,
+                    onValueChange = onTurnUserChange,
+                    label = { Text("TURN Username") },
+                    enabled = canConfigure,
+                    singleLine = true,
+                    modifier = Modifier.weight(1f)
+                )
+
+                Spacer(modifier = Modifier.width(8.dp))
+
+                OutlinedTextField(
+                    value = turnPass,
+                    onValueChange = onTurnPassChange,
+                    label = { Text("TURN Password") },
+                    enabled = canConfigure,
+                    singleLine = true,
+                    modifier = Modifier.weight(1f)
+                )
+            }
+
+            Spacer(modifier = Modifier.height(8.dp))
+        }
 
         if (isLive) {
             Surface(
@@ -355,6 +432,7 @@ private fun ConfigZone(
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun StatusZone(
     state: BroadcasterState,
@@ -431,6 +509,7 @@ private fun StatusZone(
                 containerColor = MaterialTheme.colorScheme.surfaceVariant
             )
         ) {
+            val logContext = LocalContext.current
             LazyColumn(
                 state = listState,
                 modifier = Modifier
@@ -452,7 +531,21 @@ private fun StatusZone(
                         text = line,
                         fontFamily = FontFamily.Monospace,
                         fontSize = 12.sp,
-                        modifier = Modifier.padding(vertical = 1.dp)
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .combinedClickable(
+                                onClick = {},
+                                onLongClick = {
+                                    val clipboard = logContext.getSystemService(
+                                        Context.CLIPBOARD_SERVICE
+                                    ) as ClipboardManager
+                                    clipboard.setPrimaryClip(
+                                        ClipData.newPlainText("Log", line)
+                                    )
+                                    Toast.makeText(logContext, "Copied", Toast.LENGTH_SHORT).show()
+                                }
+                            )
+                            .padding(vertical = 1.dp)
                     )
                 }
             }

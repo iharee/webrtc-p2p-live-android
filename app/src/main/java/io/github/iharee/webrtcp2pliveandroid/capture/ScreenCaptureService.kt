@@ -83,7 +83,10 @@ class ScreenCaptureService : Service() {
     data class StreamConfig(
         val serverUrl: String,
         val roomId: String,
-        val token: String?
+        val token: String?,
+        val turnServer: String? = null,
+        val turnUser: String? = null,
+        val turnPass: String? = null
     )
 
     companion object {
@@ -293,9 +296,26 @@ class ScreenCaptureService : Service() {
             return
         }
 
-        val iceServers = listOf(
-            PeerConnection.IceServer.builder("stun:stun.l.google.com:19302").createIceServer()
-        )
+        val iceServers = buildList {
+            add(PeerConnection.IceServer.builder("stun:stun.l.google.com:19302").createIceServer())
+            val config = currentConfig
+            if (config != null && !config.turnServer.isNullOrBlank()) {
+                val turnUrl = if (config.turnServer.startsWith("turn:")) {
+                    config.turnServer
+                } else {
+                    "turn:${config.turnServer}:3478"
+                }
+                val builder = PeerConnection.IceServer.builder(turnUrl)
+                if (!config.turnUser.isNullOrBlank()) {
+                    builder.setUsername(config.turnUser)
+                }
+                if (!config.turnPass.isNullOrBlank()) {
+                    builder.setPassword(config.turnPass)
+                }
+                add(builder.createIceServer())
+                log("TURN server configured: $turnUrl")
+            }
+        }
 
         val observer = object : PeerConnection.Observer {
             override fun onIceCandidate(candidate: IceCandidate?) {
