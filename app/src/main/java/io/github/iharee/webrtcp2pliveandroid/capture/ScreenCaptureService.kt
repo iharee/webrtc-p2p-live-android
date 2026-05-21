@@ -463,6 +463,14 @@ class ScreenCaptureService : Service() {
                     .setUsername(user)
                     .setPassword(pass)
                     .createIceServer())
+                add(PeerConnection.IceServer.builder("turn:$turnHost:3478?transport=tcp")
+                    .setUsername(user)
+                    .setPassword(pass)
+                    .createIceServer())
+                add(PeerConnection.IceServer.builder("turns:$turnHost:5349")
+                    .setUsername(user)
+                    .setPassword(pass)
+                    .createIceServer())
             }
         }
 
