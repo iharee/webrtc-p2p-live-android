@@ -228,32 +228,39 @@ class ScreenCaptureService : Service() {
             log("ERROR: Screen capturer is null, cannot rotate")
             return
         }
-        if (videoSource == null || eglBase == null) {
-            log("ERROR: Core components null, cannot rotate")
-            return
-        }
 
         isRotating = true
-        log("Screen rotation detected, restarting capture...")
-
-        capturer.stopCapture()
+        log("Screen rotation detected, resizing VirtualDisplay...")
 
         val dm = resources.displayMetrics
         captureWidth = dm.widthPixels
         captureHeight = dm.heightPixels
         baselineBitrate = computeBaselineBitrate(captureWidth, captureHeight)
 
-        // Delay to let the old VirtualDisplay release complete before creating a new one
-        rtcHandler.postDelayed({
-            capturer.startCapture(captureWidth, captureHeight, 30)
+        try {
+            // MediaProjection.createVirtualDisplay() can only be called ONCE per instance.
+            // Instead, resize the existing VirtualDisplay via reflection.
+            val vdField = ScreenCapturerAndroid::class.java.getDeclaredField("virtualDisplay")
+            vdField.isAccessible = true
+            val virtualDisplay = vdField.get(capturer) as? android.hardware.display.VirtualDisplay
 
-            isRotating = false
-            log("Capture restarted: ${captureWidth}x${captureHeight} @30fps, baseline bitrate=$baselineBitrate")
-
-            videoSender?.let { sender ->
-                webRTCManager?.setQuality(sender, "auto", baselineBitrate, null)
+            if (virtualDisplay != null) {
+                virtualDisplay.resize(captureWidth, captureHeight, dm.densityDpi)
+                log("VirtualDisplay resized to ${captureWidth}x${captureHeight} dpi=${dm.densityDpi}")
+            } else {
+                log("ERROR: VirtualDisplay is null, cannot resize")
             }
-        }, 300)
+        } catch (e: NoSuchFieldException) {
+            log("ERROR: virtualDisplay field not found (obfuscated?): ${e.message}")
+        } catch (e: Exception) {
+            log("ERROR: Failed to resize VirtualDisplay: ${e.message}")
+        }
+
+        isRotating = false
+
+        videoSender?.let { sender ->
+            webRTCManager?.setQuality(sender, "auto", baselineBitrate, null)
+        }
     }
 
     // ======= Signaling event bridge =======
