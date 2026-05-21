@@ -19,8 +19,7 @@ import androidx.activity.compose.setContent
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import android.widget.Toast
-import androidx.compose.foundation.ExperimentalFoundationApi
-import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -432,7 +431,6 @@ private fun ConfigZone(
     }
 }
 
-@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun StatusZone(
     state: BroadcasterState,
@@ -440,6 +438,9 @@ private fun StatusZone(
     listState: androidx.compose.foundation.lazy.LazyListState,
     onStopStreaming: () -> Unit
 ) {
+    val context = LocalContext.current
+    val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+
     Column(modifier = Modifier.fillMaxWidth()) {
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -504,17 +505,25 @@ private fun StatusZone(
         Card(
             modifier = Modifier
                 .fillMaxWidth()
-                .weight(1f),
+                .weight(1f)
+                .clickable {
+                    if (logLines.isNotEmpty()) {
+                        val allLogs = logLines.joinToString("\n")
+                        clipboard.setPrimaryClip(
+                            ClipData.newPlainText("Logs", allLogs)
+                        )
+                        Toast.makeText(context, "Copied", Toast.LENGTH_SHORT).show()
+                    }
+                },
             colors = CardDefaults.cardColors(
                 containerColor = MaterialTheme.colorScheme.surfaceVariant
             )
         ) {
-            val logContext = LocalContext.current
             LazyColumn(
                 state = listState,
                 modifier = Modifier
                     .fillMaxSize()
-                    .padding(8.dp)
+                    .padding(8.dp),
             ) {
                 if (logLines.isEmpty()) {
                     item {
@@ -531,21 +540,7 @@ private fun StatusZone(
                         text = line,
                         fontFamily = FontFamily.Monospace,
                         fontSize = 12.sp,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .combinedClickable(
-                                onClick = {},
-                                onLongClick = {
-                                    val clipboard = logContext.getSystemService(
-                                        Context.CLIPBOARD_SERVICE
-                                    ) as ClipboardManager
-                                    clipboard.setPrimaryClip(
-                                        ClipData.newPlainText("Log", line)
-                                    )
-                                    Toast.makeText(logContext, "Copied", Toast.LENGTH_SHORT).show()
-                                }
-                            )
-                            .padding(vertical = 1.dp)
+                        modifier = Modifier.padding(vertical = 1.dp)
                     )
                 }
             }
