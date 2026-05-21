@@ -294,7 +294,7 @@ private fun ConfigZone(
     onToggleTurnConfig: () -> Unit,
     onStartStreaming: () -> Unit
 ) {
-    val canConfigure = state is BroadcasterState.Idle || state is BroadcasterState.Failed
+    val canConfigure = state is BroadcasterState.Idle || state is BroadcasterState.Failed || state is BroadcasterState.Closed
     val isLive = state is BroadcasterState.Connected
 
     Column {
