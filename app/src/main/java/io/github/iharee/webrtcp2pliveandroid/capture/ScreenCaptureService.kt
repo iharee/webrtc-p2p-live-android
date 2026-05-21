@@ -230,7 +230,7 @@ class ScreenCaptureService : Service() {
         }
 
         isRotating = true
-        log("Screen rotation detected, resizing VirtualDisplay...")
+        log("Screen rotation detected, resizing capture pipeline...")
 
         val dm = resources.displayMetrics
         captureWidth = dm.widthPixels
@@ -238,22 +238,28 @@ class ScreenCaptureService : Service() {
         baselineBitrate = computeBaselineBitrate(captureWidth, captureHeight)
 
         try {
-            // MediaProjection.createVirtualDisplay() can only be called ONCE per instance.
-            // Instead, resize the existing VirtualDisplay via reflection.
+            // 1. Resize the VirtualDisplay (can't recreate it — Android limits to one per MediaProjection)
             val vdField = ScreenCapturerAndroid::class.java.getDeclaredField("virtualDisplay")
             vdField.isAccessible = true
             val virtualDisplay = vdField.get(capturer) as? android.hardware.display.VirtualDisplay
+            virtualDisplay?.resize(captureWidth, captureHeight, dm.densityDpi)
+            log("VirtualDisplay resized to ${captureWidth}x${captureHeight}")
 
-            if (virtualDisplay != null) {
-                virtualDisplay.resize(captureWidth, captureHeight, dm.densityDpi)
-                log("VirtualDisplay resized to ${captureWidth}x${captureHeight} dpi=${dm.densityDpi}")
-            } else {
-                log("ERROR: VirtualDisplay is null, cannot resize")
-            }
-        } catch (e: NoSuchFieldException) {
-            log("ERROR: virtualDisplay field not found (obfuscated?): ${e.message}")
+            // 2. Resize the SurfaceTexture's native buffer to match new resolution
+            val st = surfaceTextureHelper?.surfaceTexture
+            st?.setDefaultBufferSize(captureWidth, captureHeight)
+
+            // 3. Update SurfaceTextureHelper's internal size tracking so frames report correct dimensions
+            val twField = SurfaceTextureHelper::class.java.getDeclaredField("textureWidth")
+            val thField = SurfaceTextureHelper::class.java.getDeclaredField("textureHeight")
+            twField.isAccessible = true
+            thField.isAccessible = true
+            twField.setInt(surfaceTextureHelper, captureWidth)
+            thField.setInt(surfaceTextureHelper, captureHeight)
+
+            log("Capture pipeline resized to ${captureWidth}x${captureHeight}")
         } catch (e: Exception) {
-            log("ERROR: Failed to resize VirtualDisplay: ${e.message}")
+            log("ERROR: Failed to resize capture: ${e.message}")
         }
 
         isRotating = false
