@@ -224,57 +224,36 @@ class ScreenCaptureService : Service() {
     }
 
     private fun rotateCapturer() {
-        val data = mediaProjectionData ?: run {
-            log("ERROR: No media projection data stored, cannot rotate")
+        val capturer = screenCapturer ?: run {
+            log("ERROR: Screen capturer is null, cannot rotate")
             return
         }
-        if (videoSource == null || eglBase == null || peerConnectionFactory == null) {
+        if (videoSource == null || eglBase == null) {
             log("ERROR: Core components null, cannot rotate")
             return
         }
 
         isRotating = true
-        log("Screen rotation detected, swapping capturer...")
+        log("Screen rotation detected, restarting capture...")
 
-        screenCapturer?.stopCapture()
-        screenCapturer?.dispose()
-        screenCapturer = null
-
-        surfaceTextureHelper?.dispose()
-        surfaceTextureHelper = null
+        capturer.stopCapture()
 
         val dm = resources.displayMetrics
         captureWidth = dm.widthPixels
         captureHeight = dm.heightPixels
         baselineBitrate = computeBaselineBitrate(captureWidth, captureHeight)
 
-        surfaceTextureHelper = SurfaceTextureHelper.create(
-            "capture",
-            eglBase!!.eglBaseContext
-        )
+        // Delay to let the old VirtualDisplay release complete before creating a new one
+        rtcHandler.postDelayed({
+            capturer.startCapture(captureWidth, captureHeight, 30)
 
-        screenCapturer = ScreenCapturerAndroid(data, object : MediaProjection.Callback() {
-            override fun onStop() {
-                val wasRotating = isRotating
-                rtcHandler.post {
-                    if (!wasRotating) stopStreaming()
-                    else log("MediaProjection onStop ignored (rotation in progress)")
-                }
+            isRotating = false
+            log("Capture restarted: ${captureWidth}x${captureHeight} @30fps, baseline bitrate=$baselineBitrate")
+
+            videoSender?.let { sender ->
+                webRTCManager?.setQuality(sender, "auto", baselineBitrate, null)
             }
-        })
-        screenCapturer!!.initialize(
-            surfaceTextureHelper,
-            this,
-            videoSource!!.capturerObserver
-        )
-        screenCapturer!!.startCapture(captureWidth, captureHeight, 30)
-
-        isRotating = false
-        log("Capturer swapped: ${captureWidth}x${captureHeight} @30fps, baseline bitrate=$baselineBitrate")
-
-        videoSender?.let { sender ->
-            webRTCManager?.setQuality(sender, "auto", baselineBitrate, null)
-        }
+        }, 300)
     }
 
     // ======= Signaling event bridge =======
