@@ -69,13 +69,17 @@ class MainActivity : ComponentActivity() {
                     context.getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
                 }
 
-                // Configuration form state
-                var serverUrl by remember { mutableStateOf("ws://172.16.40.148:8080") }
-                var roomId by remember { mutableStateOf("testroom") }
-                var token by remember { mutableStateOf(generateRandomToken()) }
-                var turnServer by remember { mutableStateOf("") }
-                var turnUser by remember { mutableStateOf("") }
-                var turnPass by remember { mutableStateOf("") }
+                // Configuration form state — persisted across app restarts
+                val saved = remember { PreferencesHelper.load(context) }
+                var serverUrl by remember { mutableStateOf(saved.serverUrl ?: "ws://172.16.40.148:8080") }
+                var roomId by remember { mutableStateOf(saved.roomId ?: "testroom") }
+                var token by remember { mutableStateOf(saved.token ?: generateRandomToken()) }
+                var turnServer by remember { mutableStateOf(saved.turnServer ?: "") }
+                var turnUser by remember { mutableStateOf(saved.turnUser ?: "") }
+                var turnPass by remember { mutableStateOf(saved.turnPass ?: "") }
+                LaunchedEffect(Unit) {
+                    if (saved.token == null) PreferencesHelper.save(context, "token", token)
+                }
                 var showTurnConfig by remember { mutableStateOf(false) }
                 val listState = rememberLazyListState()
 
@@ -206,7 +210,7 @@ class MainActivity : ComponentActivity() {
 
                         OutlinedTextField(
                             value = serverUrl,
-                            onValueChange = { serverUrl = it },
+                            onValueChange = { serverUrl = it; PreferencesHelper.save(context, "server_url", it) },
                             label = { Text("Server URL") },
                             enabled = canConfigure || isLive,
                             singleLine = true,
@@ -218,7 +222,7 @@ class MainActivity : ComponentActivity() {
 
                         OutlinedTextField(
                             value = roomId,
-                            onValueChange = { roomId = it },
+                            onValueChange = { roomId = it; PreferencesHelper.save(context, "room_id", it) },
                             label = { Text("Room ID") },
                             enabled = canConfigure,
                             singleLine = true,
@@ -233,7 +237,7 @@ class MainActivity : ComponentActivity() {
                         ) {
                             OutlinedTextField(
                                 value = token,
-                                onValueChange = { token = it },
+                                onValueChange = { token = it; PreferencesHelper.save(context, "token", it) },
                                 label = { Text("Token") },
                                 enabled = canConfigure,
                                 singleLine = true,
@@ -264,7 +268,7 @@ class MainActivity : ComponentActivity() {
                         if (showTurnConfig) {
                             OutlinedTextField(
                                 value = turnServer,
-                                onValueChange = { turnServer = it },
+                                onValueChange = { turnServer = it; PreferencesHelper.save(context, "turn_server", it) },
                                 label = { Text("TURN Server (e.g. 203.0.113.1)") },
                                 enabled = canConfigure,
                                 singleLine = true,
@@ -277,7 +281,7 @@ class MainActivity : ComponentActivity() {
                             Row(modifier = Modifier.fillMaxWidth()) {
                                 OutlinedTextField(
                                     value = turnUser,
-                                    onValueChange = { turnUser = it },
+                                    onValueChange = { turnUser = it; PreferencesHelper.save(context, "turn_user", it) },
                                     label = { Text("TURN Username", fontSize = 13.sp) },
                                     enabled = canConfigure,
                                     singleLine = true,
@@ -287,7 +291,7 @@ class MainActivity : ComponentActivity() {
                                 Spacer(modifier = Modifier.width(8.dp))
                                 OutlinedTextField(
                                     value = turnPass,
-                                    onValueChange = { turnPass = it },
+                                    onValueChange = { turnPass = it; PreferencesHelper.save(context, "turn_pass", it) },
                                     label = { Text("TURN Password", fontSize = 13.sp) },
                                     enabled = canConfigure,
                                     singleLine = true,
