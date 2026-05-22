@@ -455,21 +455,26 @@ class ScreenCaptureService : Service() {
         val cfg = currentConfig
         val iceServers = buildList {
             add(PeerConnection.IceServer.builder("stun:stun.l.google.com:19302").createIceServer())
-            val turnHost = cfg?.turnServer?.removePrefix("turn:")?.removePrefix("turns:")?.split("?")?.first()?.trim()
-            if (!turnHost.isNullOrBlank()) {
-                val user = cfg.turnUser?.ifBlank { "test" } ?: "test"
-                val pass = cfg.turnPass?.ifBlank { "test" } ?: "test"
+            val turnServer = cfg?.turnServer
+            val turnUser = cfg?.turnUser
+            val turnPass = cfg?.turnPass
+            if (!turnServer.isNullOrBlank() && !turnUser.isNullOrBlank() && !turnPass.isNullOrBlank()) {
+                val turnHost = turnServer.removePrefix("turn:")
+                    .removePrefix("turns:")
+                    .split("?")
+                    .first()
+                    .trim()
                 add(PeerConnection.IceServer.builder("turn:$turnHost:3478")
-                    .setUsername(user)
-                    .setPassword(pass)
+                    .setUsername(turnUser)
+                    .setPassword(turnPass)
                     .createIceServer())
                 add(PeerConnection.IceServer.builder("turn:$turnHost:3478?transport=tcp")
-                    .setUsername(user)
-                    .setPassword(pass)
+                    .setUsername(turnUser)
+                    .setPassword(turnPass)
                     .createIceServer())
                 add(PeerConnection.IceServer.builder("turns:$turnHost:5349")
-                    .setUsername(user)
-                    .setPassword(pass)
+                    .setUsername(turnUser)
+                    .setPassword(turnPass)
                     .createIceServer())
             }
         }

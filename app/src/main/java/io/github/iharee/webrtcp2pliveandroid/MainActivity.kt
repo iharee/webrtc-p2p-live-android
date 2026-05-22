@@ -134,6 +134,11 @@ class MainActivity : ComponentActivity() {
                 // ---- Start streaming helper ----
 
                 fun startStreamingFlow() {
+                    if (turnServer.isNotBlank() && (turnUser.isBlank() || turnPass.isBlank())) {
+                        Toast.makeText(context, "TURN username and password are required when TURN server is set", Toast.LENGTH_LONG).show()
+                        return
+                    }
+
                     val config = ScreenCaptureService.StreamConfig(
                         serverUrl = serverUrl,
                         roomId = roomId,
