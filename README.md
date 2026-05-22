@@ -4,6 +4,12 @@ Android screen broadcaster for [webrtc-p2p-live](https://github.com/iharee/webrt
 
 Capture your Android screen and stream it in real time to a web viewer. No account, no cloud relay — just a direct peer connection.
 
+## Motivation
+
+[webrtc-p2p-live](https://github.com/iharee/webrtc-p2p-live) relies on the web platform's `getDisplayMedia()` API for screen capture. This API is unavailable on Android Chrome — the browser simply does not expose it. As a result, the web-based broadcaster cannot function on Android devices.
+
+This application replaces the browser-based capture path with Android's native `MediaProjection` API, feeding captured frames directly into a WebRTC peer connection. The signaling protocol, P2P topology, and viewer experience remain identical to the web broadcaster.
+
 ## Features
 
 - **Screen capture** via `MediaProjection` API, with foreground service
@@ -79,14 +85,37 @@ export JAVA_HOME="/path/to/jdk-21"
 
 ## How screen rotation works
 
-Android's `MediaProjection.createVirtualDisplay()` can only be called once per token. Rather than recreating the capturer (which would require re-authorization), the app:
+**Problem**: when the device rotates, the capturer resolution remains unchanged. The viewer receives frames at the original dimensions — landscape content rendered into a portrait frame, with the active picture region reduced to a narrow strip.
 
-1. Detects the orientation change via `onConfigurationChanged`
-2. Resizes the existing `VirtualDisplay` via reflection
-3. Updates the `SurfaceTexture` buffer and `SurfaceTextureHelper` internal size tracking
-4. The WebRTC encoder detects the new frame resolution and sends a fresh keyframe
+### Other approaches attempted
 
-The viewer sees a brief freeze (~0.5s) then the stream resumes at the correct aspect ratio. The PeerConnection stays up the entire time.
+**Re-create the capturer with a new `ScreenCapturerAndroid`**: passing the existing `mediaProjectionData` to a second `ScreenCapturerAndroid` instance fails because `MediaProjectionManager.getMediaProjection()` enforces a single invocation per token.
+
+**Stop and restart the existing capturer**: invoking `stopCapture()` followed by `startCapture(newWidth, newHeight)` on the same instance fails because `startCapture()` internally calls `MediaProjection.createVirtualDisplay()`, which is limited to one call per `MediaProjection` lifetime regardless of prior release.
+
+### Implemented solution: reflection-based in-place resize
+
+The capturer remains running. Three components in the capture pipeline are resized via Java reflection without tearing down the peer connection (`ScreenCaptureService.rotateCapturer()`):
+
+| Component | Reflection target | Purpose |
+|---|---|---|
+| `VirtualDisplay` | `resize(w, h, dpi)` | Resize the system-level rendering surface |
+| `SurfaceTexture` | `setDefaultBufferSize(w, h)` | Resize the GPU buffer to match |
+| `SurfaceTextureHelper` | `textureWidth` / `textureHeight` fields | Update frame dimension metadata sent to the encoder |
+
+All three modifications are necessary. Resizing only the `VirtualDisplay` produces no error, but frames continue to carry the original dimensions — `SurfaceTextureHelper` constructs `VideoFrame` instances using its cached `textureWidth` and `textureHeight` fields, so the encoder is never notified of the resolution change. The pipeline forms a chain (system rendering → GPU buffer → encoder metadata), and each link must be updated for the encoder to emit correctly-sized frames.
+
+### Associated changes
+
+**Android (this repository)**:
+- `ScreenCaptureService.kt` — `rotateCapturer()` resizes the three components via reflection and calls `WebRTCManager.setQuality()` to recompute the bitrate for the new resolution
+- `MainActivity.kt` — `onConfigurationChanged()` detects the orientation and delegates to `service.onRotation()`
+- `AndroidManifest.xml` — `configChanges="orientation|screenSize|..."` suppresses Activity destruction on configuration change, keeping the service binding intact
+
+**Web viewer (webrtc-p2p-live)**:
+- `style.css` — the fixed `aspect-ratio: 16/9` rule is removed; `object-fit: contain` is retained so the video element adapts to the stream's native aspect ratio
+
+**Unnecessary operations**: the peer connection is neither closed nor renegotiated (no offer/answer exchange); no track replacement occurs. The viewer requires no JavaScript changes — rotation is handled entirely on the sender side.
 
 ## Tech stack
 
