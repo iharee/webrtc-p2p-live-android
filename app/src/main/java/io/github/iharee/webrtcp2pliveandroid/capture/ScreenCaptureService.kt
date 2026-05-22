@@ -1,6 +1,5 @@
 package io.github.iharee.webrtcp2pliveandroid.capture
 
-import io.github.iharee.webrtcp2pliveandroid.R
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
@@ -33,6 +32,7 @@ import org.webrtc.SessionDescription
 import org.webrtc.SurfaceTextureHelper
 import org.webrtc.VideoSource
 import org.webrtc.VideoTrack
+import io.github.iharee.webrtcp2pliveandroid.CertResources
 import okhttp3.OkHttpClient
 import java.security.KeyStore
 import java.security.SecureRandom
@@ -684,12 +684,22 @@ class ScreenCaptureService : Service() {
     // ======= OkHttp with custom CA trust =======
 
     private fun createOkHttpClient(): OkHttpClient {
-        val cf = CertificateFactory.getInstance("X.509")
-        val caCert = resources.openRawResource(R.raw.webrtc_ca).use { cf.generateCertificate(it) }
+        val certIds = CertResources.names.map { name ->
+            resources.getIdentifier(name, "raw", packageName)
+        }.filter { it != 0 }
 
+        if (certIds.isEmpty()) {
+            return OkHttpClient()
+        }
+
+        val cf = CertificateFactory.getInstance("X.509")
         val customKeyStore = KeyStore.getInstance(KeyStore.getDefaultType()).apply {
             load(null, null)
-            setCertificateEntry("webrtc-ca", caCert)
+        }
+        for ((i, id) in certIds.withIndex()) {
+            resources.openRawResource(id).use { stream ->
+                customKeyStore.setCertificateEntry("custom-ca-$i", cf.generateCertificate(stream))
+            }
         }
 
         val customTmf = TrustManagerFactory.getInstance(TrustManagerFactory.getDefaultAlgorithm()).apply {

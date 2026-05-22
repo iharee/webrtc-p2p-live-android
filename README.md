@@ -83,6 +83,26 @@ export JAVA_HOME="/path/to/jdk-21"
 | Token | Optional room password — viewer must supply the same token |
 | TURN Server / Username / Password | Optional TURN relay for NAT traversal |
 
+## Custom CA certificates
+
+When connecting to a signaling server that uses a self-signed or private CA certificate, place the CA's PEM file in the `certs/` directory at the project root:
+
+```
+certs/
+  webrtc_ca.pem
+  my-org-ca.pem        ← drop additional certs here
+```
+
+The build system (Gradle `processCerts` task) scans `certs/*.pem` and automatically:
+
+- Includes every certificate in the Android **network security config** (trusted by `HttpsURLConnection`, WebView, etc.)
+- Loads every certificate into the **OkHttp `SSLSocketFactory`** (trusted by the WebRTC signaling WebSocket)
+- Generates a `CertResources.kt` index so the app trusts all certs at runtime — no code changes needed
+
+**Adding a new cert** is just dropping a `.pem` file into `certs/` and rebuilding. **Removing a cert** is deleting the file and rebuilding.
+
+If the `certs/` directory is empty, the app trusts only the system CA store (standard Android behavior).
+
 ## How screen rotation works
 
 **Problem**: when the device rotates, the capturer resolution remains unchanged. The viewer receives frames at the original dimensions — landscape content rendered into a portrait frame, with the active picture region reduced to a narrow strip.
