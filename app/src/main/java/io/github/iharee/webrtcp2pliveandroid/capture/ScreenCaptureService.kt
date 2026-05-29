@@ -78,6 +78,9 @@ class ScreenCaptureService : Service() {
     // ======= Stored config for signaling =======
     private var currentConfig: StreamConfig? = null
 
+    // ======= Dynamic ICE servers from signaling =======
+    private var receivedIceServers: List<PeerConnection.IceServer>? = null
+
     // ======= Quality state =======
     private var captureWidth: Int = 0
     private var captureHeight: Int = 0
@@ -96,10 +99,7 @@ class ScreenCaptureService : Service() {
     data class StreamConfig(
         val serverUrl: String,
         val roomId: String,
-        val token: String?,
-        val turnServer: String? = null,
-        val turnUser: String? = null,
-        val turnPass: String? = null
+        val token: String?
     )
 
     companion object {
@@ -204,7 +204,14 @@ class ScreenCaptureService : Service() {
         log("Screen capture started ${captureWidth}x${captureHeight} @30fps, baseline bitrate=$baselineBitrate")
 
         // 6. Connect signaling
-        signalingClient = SignalingClient(config.serverUrl, { msg -> onSignalingEvent(msg) }, createOkHttpClient())
+        signalingClient = SignalingClient(config.serverUrl, { msg -> onSignalingEvent(msg) }, createOkHttpClient()).apply {
+            onIceServers = { servers ->
+                rtcHandler.post {
+                    receivedIceServers = servers
+                    log("Received ${servers.size} ICE servers from signaling (incl. STUN/TURN)")
+                }
+            }
+        }
         signalingClient!!.connect()
         log("Signaling client connecting...")
     }
@@ -452,32 +459,15 @@ class ScreenCaptureService : Service() {
             ) {}
         }
 
-        val cfg = currentConfig
-        val iceServers = buildList {
-            add(PeerConnection.IceServer.builder("stun:stun.l.google.com:19302").createIceServer())
-            val turnServer = cfg?.turnServer
-            val turnUser = cfg?.turnUser
-            val turnPass = cfg?.turnPass
-            if (!turnServer.isNullOrBlank() && !turnUser.isNullOrBlank() && !turnPass.isNullOrBlank()) {
-                val turnHost = turnServer.removePrefix("turn:")
-                    .removePrefix("turns:")
-                    .split("?")
-                    .first()
-                    .trim()
-                add(PeerConnection.IceServer.builder("turn:$turnHost:3478")
-                    .setUsername(turnUser)
-                    .setPassword(turnPass)
-                    .createIceServer())
-                add(PeerConnection.IceServer.builder("turn:$turnHost:3478?transport=tcp")
-                    .setUsername(turnUser)
-                    .setPassword(turnPass)
-                    .createIceServer())
-                add(PeerConnection.IceServer.builder("turns:$turnHost:5349")
-                    .setUsername(turnUser)
-                    .setPassword(turnPass)
-                    .createIceServer())
-            }
+        // Use ICE servers delivered dynamically by the signaling server (via "joined").
+        // The server includes both STUN and TURN entries with short-lived credentials.
+        val iceServers = receivedIceServers
+        if (iceServers.isNullOrEmpty()) {
+            log("ERROR: No ICE servers received from signaling — cannot create PeerConnection")
+            transitionTo(BroadcasterState.Failed("No ICE servers available"))
+            return
         }
+        log("Creating PeerConnection with ${iceServers.size} ICE servers from signaling")
 
         peerConnection = webRTCManager!!.createPeerConnection(factory, iceServers, observer)
         if (peerConnection == null) {
@@ -578,6 +568,7 @@ class ScreenCaptureService : Service() {
         pendingCandidates.clear()
         localSdp = null
         currentConfig = null
+        receivedIceServers = null
 
         log("Reset complete")
     }

@@ -74,13 +74,9 @@ class MainActivity : ComponentActivity() {
                 var serverUrl by remember { mutableStateOf(saved.serverUrl ?: "ws://172.16.40.148:8080") }
                 var roomId by remember { mutableStateOf(saved.roomId ?: "testroom") }
                 var token by remember { mutableStateOf(saved.token ?: generateRandomToken()) }
-                var turnServer by remember { mutableStateOf(saved.turnServer ?: "") }
-                var turnUser by remember { mutableStateOf(saved.turnUser ?: "") }
-                var turnPass by remember { mutableStateOf(saved.turnPass ?: "") }
                 LaunchedEffect(Unit) {
                     if (saved.token == null) PreferencesHelper.save(context, "token", token)
                 }
-                var showTurnConfig by remember { mutableStateOf(false) }
                 val listState = rememberLazyListState()
 
                 // Pending config held across permission/MediaProjection flow
@@ -138,18 +134,10 @@ class MainActivity : ComponentActivity() {
                 // ---- Start streaming helper ----
 
                 fun startStreamingFlow() {
-                    if (turnServer.isNotBlank() && (turnUser.isBlank() || turnPass.isBlank())) {
-                        Toast.makeText(context, "TURN username and password are required when TURN server is set", Toast.LENGTH_LONG).show()
-                        return
-                    }
-
                     val config = ScreenCaptureService.StreamConfig(
                         serverUrl = serverUrl,
                         roomId = roomId,
-                        token = token.ifBlank { null },
-                        turnServer = turnServer.ifBlank { null },
-                        turnUser = turnUser.ifBlank { null },
-                        turnPass = turnPass.ifBlank { null }
+                        token = token.ifBlank { null }
                     )
                     pendingConfig = config
 
@@ -252,56 +240,6 @@ class MainActivity : ComponentActivity() {
                         }
 
                         Spacer(modifier = Modifier.height(8.dp))
-
-                        TextButton(onClick = { showTurnConfig = !showTurnConfig }) {
-                            Text(if (showTurnConfig) "▼ TURN Config" else "▶ TURN Config")
-                            Spacer(modifier = Modifier.width(4.dp))
-                            if (!turnServer.isBlank()) {
-                                Text(
-                                    text = "(configured)",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = Color(0xFF00AA00)
-                                )
-                            }
-                        }
-
-                        if (showTurnConfig) {
-                            OutlinedTextField(
-                                value = turnServer,
-                                onValueChange = { turnServer = it; PreferencesHelper.save(context, "turn_server", it) },
-                                label = { Text("TURN Server (e.g. 203.0.113.1)") },
-                                enabled = canConfigure,
-                                singleLine = true,
-                                modifier = Modifier.fillMaxWidth(),
-                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri)
-                            )
-
-                            Spacer(modifier = Modifier.height(8.dp))
-
-                            Row(modifier = Modifier.fillMaxWidth()) {
-                                OutlinedTextField(
-                                    value = turnUser,
-                                    onValueChange = { turnUser = it; PreferencesHelper.save(context, "turn_user", it) },
-                                    label = { Text("TURN Username", fontSize = 13.sp) },
-                                    enabled = canConfigure,
-                                    singleLine = true,
-                                    modifier = Modifier.weight(1f),
-                                    textStyle = MaterialTheme.typography.bodyMedium.copy(fontSize = 14.sp)
-                                )
-                                Spacer(modifier = Modifier.width(8.dp))
-                                OutlinedTextField(
-                                    value = turnPass,
-                                    onValueChange = { turnPass = it; PreferencesHelper.save(context, "turn_pass", it) },
-                                    label = { Text("TURN Password", fontSize = 13.sp) },
-                                    enabled = canConfigure,
-                                    singleLine = true,
-                                    modifier = Modifier.weight(1f),
-                                    textStyle = MaterialTheme.typography.bodyMedium.copy(fontSize = 14.sp)
-                                )
-                            }
-
-                            Spacer(modifier = Modifier.height(8.dp))
-                        }
 
                         if (isLive) {
                             Surface(

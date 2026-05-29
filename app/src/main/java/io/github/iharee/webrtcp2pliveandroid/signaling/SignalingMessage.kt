@@ -1,5 +1,10 @@
 package io.github.iharee.webrtcp2pliveandroid.signaling
 
+// NOTE: The `iceServers` field from the "joined" signaling message is NOT included
+// in this data class because it is a complex nested JSON structure. Instead,
+// SignalingClient extracts iceServers from the raw JSON and delivers them via a
+// dedicated `onIceServers` callback. This avoids fragile nested-data-class mapping.
+
 data class SignalingMessage(
     val type: String,
     val sdp: String? = null,

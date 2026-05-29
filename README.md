@@ -15,7 +15,7 @@ This application replaces the browser-based capture path with Android's native `
 - **Screen capture** via `MediaProjection` API, with foreground service
 - **Screen rotation handling** — flip from portrait to landscape without dropping the connection. The capturer pipeline is resized in-place via reflection; no PeerConnection rebuild, no renegotiation
 - **P2P streaming** — direct WebRTC connection between broadcaster and viewer
-- **STUN / TURN** — configurable TURN credentials for NAT traversal
+- **Dynamic TURN credentials** — ICE servers delivered by signaling server after room join, no local config needed
 - **TLS signaling** — custom CA certificate support for self-signed signaling servers
 - **Quality adaptation** — viewer can request auto / high / low / custom bitrate
 - **Token-based rooms** — share a token with your viewer for private access
@@ -81,7 +81,6 @@ export JAVA_HOME="/path/to/jdk-21"
 | Server URL | WebSocket signaling server (e.g. `wss://192.168.1.100:8080`) |
 | Room ID | Shared room name, matches the viewer's URL path |
 | Token | Optional room password — viewer must supply the same token |
-| TURN Server / Username / Password | Optional TURN relay for NAT traversal |
 
 ## Custom CA certificates
 
